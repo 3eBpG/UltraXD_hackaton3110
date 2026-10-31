@@ -24,9 +24,8 @@ class LeakSensor(Device):
         self.pending_wet = wet
 
     def on_command(self, name: str, value) -> None:
-        if name == "self_test" and value:
-            self.pending_wet = False
-            self.log(f"[{self.model}] самотест: датчик сухой")
+        if name == "self_test":
+            self.set_wet(bool(int(value))) 
 
     def tick(self, dt: int) -> None:
         wet_now = 1 if self.pending_wet else 0
