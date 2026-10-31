@@ -17,18 +17,17 @@ except ImportError as e:
     print(f"ОШИБКА ИМПОРТА: {e}. Запусти скрипт из папки emulators/", flush=True)
     sys.exit(1)
 
+
 def logic_passthrough(val): return val
 def logic_bool_invert(val): return 1 - int(val)
-def logic_scale_50(val): return int(float(val) * 0.5)
 def logic_to_max(val): return 100 if float(val) > 0 else 0
 
 LOGIC_BLOCKS = {
     "passthrough": {"name": "Передать как есть", "func": logic_passthrough},
     "invert": {"name": "Инвертировать (Вкл/Выкл)", "func": logic_bool_invert},
-    "scale_50": {"name": "Уменьшить на 50%", "func": logic_scale_50},
     "to_max": {"name": "Включить на максимум", "func": logic_to_max},
+    "percentage": {"name": "Установить % мощности", "func": None},
 }
-
 def branch_gt_0(val): return float(val) > 0
 def branch_eq_1(val): return float(val) == 1
 def branch_gt_50(val): return float(val) > 50
@@ -69,10 +68,12 @@ class PipelineGraph:
 
     def apply(self):
         try:
-            source_node = next((n for n in self.nodes.values() if n["type"] == "source"), None)
+            source_node = next((n for n in self.nodes.values() if n.get("data", {}).get("role") == "source"), None)
             if not source_node: return
+            
             in_dev_id = source_node["data"].get("dev")
             if not in_dev_id: return
+            
             in_dev = next((d for d in DEVICES if d["id"] == in_dev_id), None)
             if not in_dev: return
 
@@ -89,7 +90,7 @@ class PipelineGraph:
                     raw = state.get(sig_conf["signalName"])
                     if raw is not None:
                         self.evaluate(edge["target"], raw, target_handle=edge.get("targetHandle"))
-        except Exception:
+        except Exception as e:
             pass
 
     def evaluate(self, node_id, value, target_handle=None):
@@ -97,7 +98,7 @@ class PipelineGraph:
             node = self.nodes.get(node_id)
             if not node: return
 
-            if node["type"] == "target":
+            if node.get("data", {}).get("role") == "target":
                 signals = node["data"].get("signals", [])
                 sig_conf = next((s for s in signals if s.get("handleId") == target_handle), None)
                 
@@ -109,12 +110,13 @@ class PipelineGraph:
                         if out_dev:
                             self.send_command(out_dev, target_signal, value)
                 return
-
             if node["type"] == "logic":
                 logic_id = node["data"].get("logicId")
-                if logic_id in LOGIC_BLOCKS:
+                if logic_id == "percentage":
+                    pct = float(node["data"].get("percent", 50))
+                    value = float(value) * (pct / 100.0)
+                elif logic_id in LOGIC_BLOCKS and LOGIC_BLOCKS[logic_id]["func"]:
                     value = LOGIC_BLOCKS[logic_id]["func"](value)
-
             elif node["type"] == "branch":
                 branch_id = node["data"].get("branchId")
                 result = False
@@ -152,7 +154,7 @@ class PipelineGraph:
             pass
 
     def describe(self):
-        source = next((n for n in self.nodes.values() if n["type"] == "source"), None)
+        source = next((n for n in self.nodes.values() if n.get("data", {}).get("role") == "source"), None)
         if not source: return []
         
         scenarios = []
@@ -165,7 +167,7 @@ class PipelineGraph:
             label = ""
             if node["type"] == "logic": label = f"Логика [{LOGIC_BLOCKS.get(node['data'].get('logicId'), {}).get('name', '?')}]"
             elif node["type"] == "branch": label = f"Условие [{BRANCH_BLOCKS.get(node['data'].get('branchId'), {}).get('name', '?')}]"
-            elif node["type"] == "target":
+            elif node.get("data", {}).get("role") == "target":
                 sig_conf = next((s for s in node["data"].get("signals", []) if s.get("handleId") == target_handle), None)
                 sig_name = sig_conf.get("signalName", "?") if sig_conf else "?"
                 label = f"То [{node['data'].get('dev')}] ({sig_name})"
@@ -231,8 +233,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 res = []
                 for p in PIPELINES:
                     try:
-                        desc = p.describe()
-                        res.extend(desc)
+                        res.extend(p.describe())
                     except Exception as e:
                         print(f"[Describe Error] {e}", flush=True)
                 self._send_json(res)
@@ -284,7 +285,10 @@ class APIHandler(BaseHTTPRequestHandler):
                 nodes = data.get("nodes", [])
                 edges = data.get("edges", [])
                 
-                if any(n["type"] == "source" for n in nodes) and any(n["type"] == "target" for n in nodes):
+                has_source = any(n.get("data", {}).get("role") == "source" for n in nodes)
+                has_target = any(n.get("data", {}).get("role") == "target" for n in nodes)
+                
+                if has_source and has_target:
                     new_id = str(int(time.time() * 1000))
                     PIPELINES.append(PipelineGraph(nodes, edges, new_id))
                     self._send_json({"status": "ok", "id": new_id})
@@ -321,7 +325,7 @@ def start_api():
         print("API УСПЕШНО ЗАПУЩЕНО НА ПОРТУ 9000!", flush=True)
         server.serve_forever()
     except OSError:
-        print("ОШИБКА: ПОРТ 9000 ЗАНЯТ", flush=True)
+        print("ОШИБКА: ПОРТ 9000 УЖЕ ЗАНЯТ!", flush=True)
 
 def engine_loop():
     while True:
@@ -330,7 +334,7 @@ def engine_loop():
         time.sleep(1)
 
 def main():
-    print("--- ЗАПУСК БЭКА ---", flush=True)
+    print("--- ЗАПУСК БЭКЕНДА ---", flush=True)
     build_devices_db()
     print("Запуск потока API...", flush=True)
     threading.Thread(target=start_api, daemon=True).start()
