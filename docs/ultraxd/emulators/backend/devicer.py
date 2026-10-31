@@ -17,9 +17,6 @@ except ImportError as e:
     print(f"ОШИБКА ИМПОРТА: {e}. Запусти скрипт из папки emulators/", flush=True)
     sys.exit(1)
 
-# ==========================================
-# ЛОГИЧЕСКИЕ БЛОКИ
-# ==========================================
 def logic_passthrough(val): return val
 def logic_bool_invert(val): return 1 - int(val)
 def logic_scale_50(val): return int(float(val) * 0.5)
@@ -75,32 +72,42 @@ class PipelineGraph:
             source_node = next((n for n in self.nodes.values() if n["type"] == "source"), None)
             if not source_node: return
             in_dev_id = source_node["data"].get("dev")
-            source_signal = source_node["data"].get("sig")
-            if not in_dev_id or not source_signal: return
+            if not in_dev_id: return
             in_dev = next((d for d in DEVICES if d["id"] == in_dev_id), None)
             if not in_dev: return
 
             with urllib.request.urlopen(f"{in_dev['url']}/state", timeout=1) as resp:
                 state = json.loads(resp.read().decode('utf-8'))
-            raw = state.get(source_signal)
-            if raw is None: return
 
-            self.evaluate(source_node["id"], raw)
+            out_edges = [e for e in self.edges if e["source"] == source_node["id"]]
+            for edge in out_edges:
+                src_handle = edge.get("sourceHandle")
+                signals = source_node["data"].get("signals", [])
+                sig_conf = next((s for s in signals if s.get("handleId") == src_handle), None)
+                
+                if sig_conf and sig_conf.get("signalName"):
+                    raw = state.get(sig_conf["signalName"])
+                    if raw is not None:
+                        self.evaluate(edge["target"], raw, target_handle=edge.get("targetHandle"))
         except Exception:
             pass
 
-    def evaluate(self, node_id, value):
+    def evaluate(self, node_id, value, target_handle=None):
         try:
             node = self.nodes.get(node_id)
             if not node: return
 
             if node["type"] == "target":
-                out_dev_id = node["data"].get("dev")
-                target_signal = node["data"].get("sig")
-                if out_dev_id and target_signal:
-                    out_dev = next((d for d in DEVICES if d["id"] == out_dev_id), None)
-                    if out_dev:
-                        self.send_command(out_dev, target_signal, value)
+                signals = node["data"].get("signals", [])
+                sig_conf = next((s for s in signals if s.get("handleId") == target_handle), None)
+                
+                if sig_conf and sig_conf.get("signalName"):
+                    target_signal = sig_conf["signalName"]
+                    out_dev_id = node["data"].get("dev")
+                    if out_dev_id:
+                        out_dev = next((d for d in DEVICES if d["id"] == out_dev_id), None)
+                        if out_dev:
+                            self.send_command(out_dev, target_signal, value)
                 return
 
             if node["type"] == "logic":
@@ -118,12 +125,12 @@ class PipelineGraph:
                 out_edges = [e for e in self.edges if e["source"] == node_id]
                 for edge in out_edges:
                     if edge.get("sourceHandle") == handle:
-                        self.evaluate(edge["target"], value)
+                        self.evaluate(edge["target"], value, target_handle=edge.get("targetHandle"))
                 return
 
             out_edges = [e for e in self.edges if e["source"] == node_id]
             for edge in out_edges:
-                self.evaluate(edge["target"], value)
+                self.evaluate(edge["target"], value, target_handle=edge.get("targetHandle"))
                 
         except Exception:
             pass
@@ -149,18 +156,19 @@ class PipelineGraph:
         if not source: return []
         
         scenarios = []
-        def dfs(node_id, path, visited):
+        def dfs(node_id, path, visited, target_handle=None):
             if node_id in visited: return
             new_visited = visited | {node_id}
             node = self.nodes.get(node_id)
             if not node: return
 
             label = ""
-            if node["type"] == "source": label = f"Если [{node['data'].get('dev')}] ({node['data'].get('sig')})"
-            elif node["type"] == "logic": label = f"Логика [{LOGIC_BLOCKS.get(node['data'].get('logicId'), {}).get('name', '?')}]"
+            if node["type"] == "logic": label = f"Логика [{LOGIC_BLOCKS.get(node['data'].get('logicId'), {}).get('name', '?')}]"
             elif node["type"] == "branch": label = f"Условие [{BRANCH_BLOCKS.get(node['data'].get('branchId'), {}).get('name', '?')}]"
             elif node["type"] == "target":
-                label = f"То [{node['data'].get('dev')}] ({node['data'].get('sig')})"
+                sig_conf = next((s for s in node["data"].get("signals", []) if s.get("handleId") == target_handle), None)
+                sig_name = sig_conf.get("signalName", "?") if sig_conf else "?"
+                label = f"То [{node['data'].get('dev')}] ({sig_name})"
                 scenarios.append({
                     "id": str(self.pipeline_id), 
                     "text": " ➡ ".join(path + [label])
@@ -172,9 +180,15 @@ class PipelineGraph:
                 edge_label = label
                 if node["type"] == "branch":
                     edge_label += " (Да)" if edge.get("sourceHandle") == "true" else " (Нет)"
-                dfs(edge["target"], path + [edge_label], new_visited)
-                
-        dfs(source["id"], [], set())
+                dfs(edge["target"], path + [edge_label], new_visited, edge.get("targetHandle"))
+
+        out_edges = [e for e in self.edges if e["source"] == source["id"]]
+        for edge in out_edges:
+            sig_conf = next((s for s in source["data"].get("signals", []) if s.get("handleId") == edge.get("sourceHandle")), None)
+            sig_name = sig_conf.get("signalName", "?") if sig_conf else "?"
+            source_label = f"Если [{source['data'].get('dev')}] ({sig_name})"
+            dfs(edge["target"], [source_label], {source["id"]}, edge.get("targetHandle"))
+            
         return scenarios
 
 PIPELINES = [] 
@@ -307,7 +321,7 @@ def start_api():
         print("API УСПЕШНО ЗАПУЩЕНО НА ПОРТУ 9000!", flush=True)
         server.serve_forever()
     except OSError:
-        print("ОШИБКА: ПОРТ 9000 УЖЕ ЗАНЯТ!", flush=True)
+        print("ОШИБКА: ПОРТ 9000 ЗАНЯТ", flush=True)
 
 def engine_loop():
     while True:
@@ -316,7 +330,7 @@ def engine_loop():
         time.sleep(1)
 
 def main():
-    print("--- ЗАПУСК БЭКЕНДА ---", flush=True)
+    print("--- ЗАПУСК БЭКА ---", flush=True)
     build_devices_db()
     print("Запуск потока API...", flush=True)
     threading.Thread(target=start_api, daemon=True).start()

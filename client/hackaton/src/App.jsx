@@ -19,43 +19,59 @@ const SourceNode = ({ id, data }) => {
       .map(([name]) => ({ value: name, label: name }));
   }
 
+  const signals = data.signals || [];
+
+  const updateSignal = (idx, sigName) => {
+    const newSignals = [...signals];
+    if (!newSignals[idx]) newSignals[idx] = { handleId: `${id}-${idx}`, signalName: null };
+    newSignals[idx].signalName = sigName;
+    data.onChange(id, 'signals', newSignals);
+  };
+
+  const maxSlots = signalOptions.length > 0 ? signalOptions.length : 1;
+  const numSlots = Math.min(signals.length + 1, maxSlots);
+
   return (
-    <Card withBorder padding="sm" style={{ width: 220, background: '#fff' }}>
-      <Handle type="source" position={Position.Right} style={{ background: '#aa3bff' }} />
+    <Card withBorder padding="sm" style={{ width: 240, background: '#fff', position: 'relative', overflow: 'visible' }}>
       <Text fw={500} size="sm" mb="xs">1. Источник</Text>
-      <Select placeholder="Устройство" data={deviceOptions} value={data.dev} onChange={(v) => data.onChange(id, 'dev', v)} size="xs" mb="xs" />
-      <Select placeholder="Сигнал" data={signalOptions} value={data.sig} onChange={(v) => data.onChange(id, 'sig', v)} disabled={!data.dev} size="xs" />
-    </Card>
-  );
-};
-
-const LogicNode = ({ id, data }) => {
-  const safeBlocks = Array.isArray(data.logicBlocks) ? data.logicBlocks : [];
-  const logicOptions = safeBlocks.filter(b => b.block_type === 'logic').map(b => ({ value: b.id, label: b.name }));
-
-  return (
-    <Card withBorder padding="sm" style={{ width: 200, background: '#fff' }}>
-      <Handle type="target" position={Position.Left} style={{ background: '#aa3bff' }} />
-      <Handle type="source" position={Position.Right} style={{ background: '#aa3bff' }} />
-      <Text fw={500} size="sm" mb="xs">Логика</Text>
-      <Select placeholder="Действие" data={logicOptions} value={data.logicId} onChange={(v) => data.onChange(id, 'logicId', v)} size="xs" />
-    </Card>
-  );
-};
-
-const BranchNode = ({ id, data }) => {
-  const safeBlocks = Array.isArray(data.logicBlocks) ? data.logicBlocks : [];
-  const branchOptions = safeBlocks.filter(b => b.block_type === 'branch').map(b => ({ value: b.id, label: b.name }));
-
-  return (
-    <Card withBorder padding="sm" style={{ width: 200, background: '#fff' }}>
-      <Handle type="target" position={Position.Left} style={{ background: '#aa3bff' }} />
-      <Text fw={500} size="sm" mb="xs">Ветвление</Text>
-      <Select placeholder="Условие" data={branchOptions} value={data.branchId} onChange={(v) => data.onChange(id, 'branchId', v)} size="xs" />
-      <div style={{ position: 'absolute', right: -15, top: '35%', fontSize: 11, color: 'green', fontWeight: 'bold' }}>Да</div>
-      <Handle type="source" position={Position.Right} id="true" style={{ background: 'green', top: '40%' }} />
-      <div style={{ position: 'absolute', right: -15, top: '65%', fontSize: 11, color: 'red', fontWeight: 'bold' }}>Нет</div>
-      <Handle type="source" position={Position.Right} id="false" style={{ background: 'red', top: '70%' }} />
+      <Select 
+        placeholder="Устройство" 
+        data={deviceOptions} 
+        value={data.dev} 
+        onChange={(v) => {
+          data.onChange(id, 'dev', v);
+          data.onChange(id, 'signals', []);
+          data.onDeleteEdges(id);
+        }} 
+        size="xs" 
+        mb="md"
+      />
+      
+      {Array.from({ length: numSlots }).map((_, idx) => {
+        const sigObj = signals[idx] || { handleId: `${id}-${idx}`, signalName: null };
+        return (
+          <div key={idx} style={{ position: 'relative', marginBottom: 8 }}>
+            <Handle 
+              type="source" 
+              id={sigObj.handleId} 
+              position={Position.Right} 
+              style={{ 
+                background: sigObj.signalName ? '#aa3bff' : '#dcdcdc', 
+                width: 16, height: 16, 
+                right: -23, top: '50%'
+              }} 
+            />
+            <Select 
+              placeholder={`Сигнал ${idx + 1}`} 
+              data={signalOptions.filter(opt => !signals.some(s => s?.signalName === opt.value && s.handleId !== sigObj.handleId))}
+              value={sigObj.signalName} 
+              onChange={(v) => updateSignal(idx, v)} 
+              size="xs" 
+              disabled={!data.dev}
+            />
+          </div>
+        );
+      })}
     </Card>
   );
 };
@@ -72,12 +88,93 @@ const TargetNode = ({ id, data }) => {
       .map(([name]) => ({ value: name, label: name }));
   }
 
+  const signals = data.signals || [];
+
+  const updateSignal = (idx, sigName) => {
+    const newSignals = [...signals];
+    if (!newSignals[idx]) newSignals[idx] = { handleId: `${id}-${idx}`, signalName: null };
+    newSignals[idx].signalName = sigName;
+    data.onChange(id, 'signals', newSignals);
+  };
+
+  const maxSlots = signalOptions.length > 0 ? signalOptions.length : 1;
+  const numSlots = Math.min(signals.length + 1, maxSlots);
+
   return (
-    <Card withBorder padding="sm" style={{ width: 220, background: '#fff', borderColor: '#aa3bff' }}>
-      <Handle type="target" position={Position.Left} style={{ background: '#aa3bff' }} />
+    <Card withBorder padding="sm" style={{ width: 240, background: '#fff', borderColor: '#aa3bff', position: 'relative', overflow: 'visible' }}>
       <Text fw={500} size="sm" mb="xs" c="violet">3. Цель</Text>
-      <Select placeholder="Устройство" data={deviceOptions} value={data.dev} onChange={(v) => data.onChange(id, 'dev', v)} size="xs" mb="xs" />
-      <Select placeholder="Сигнал" data={signalOptions} value={data.sig} onChange={(v) => data.onChange(id, 'sig', v)} disabled={!data.dev} size="xs" />
+      <Select 
+        placeholder="Устройство" 
+        data={deviceOptions} 
+        value={data.dev} 
+        onChange={(v) => {
+          data.onChange(id, 'dev', v);
+          data.onChange(id, 'signals', []);
+          data.onDeleteEdges(id);
+        }} 
+        size="xs" 
+        mb="md"
+      />
+      
+      {Array.from({ length: numSlots }).map((_, idx) => {
+        const sigObj = signals[idx] || { handleId: `${id}-${idx}`, signalName: null };
+        return (
+          <div key={idx} style={{ position: 'relative', marginBottom: 8 }}>
+            <Handle 
+              type="target" 
+              id={sigObj.handleId} 
+              position={Position.Left} 
+              style={{ 
+                background: sigObj.signalName ? '#aa3bff' : '#dcdcdc', 
+                width: 16, height: 16, 
+                left: -23, top: '50%'
+              }} 
+            />
+            <Select 
+              placeholder={`Вход ${idx + 1}`} 
+              data={signalOptions.filter(opt => !signals.some(s => s?.signalName === opt.value && s.handleId !== sigObj.handleId))}
+              value={sigObj.signalName} 
+              onChange={(v) => updateSignal(idx, v)} 
+              size="xs" 
+              disabled={!data.dev}
+            />
+          </div>
+        );
+      })}
+    </Card>
+  );
+};
+
+const LogicNode = ({ id, data }) => {
+  const safeBlocks = Array.isArray(data.logicBlocks) ? data.logicBlocks : [];
+  const logicOptions = safeBlocks.filter(b => b.block_type === 'logic').map(b => ({ value: b.id, label: b.name }));
+
+  return (
+    <Card withBorder padding="sm" style={{ width: 200, background: '#fff', position: 'relative', overflow: 'visible' }}>
+      <Handle type="target" id="in" position={Position.Left} style={{ width: 16, height: 16, background: '#aa3bff', left: -9, top: '50%' }} />
+      <Handle type="source" id="out" position={Position.Right} style={{ width: 16, height: 16, background: '#aa3bff', right: -9, top: '50%' }} />
+      <Text fw={500} size="sm" mb="xs">Логика</Text>
+      <Select placeholder="Действие" data={logicOptions} value={data.logicId} onChange={(v) => data.onChange(id, 'logicId', v)} size="xs" />
+    </Card>
+  );
+};
+
+const BranchNode = ({ id, data }) => {
+  const safeBlocks = Array.isArray(data.logicBlocks) ? data.logicBlocks : [];
+  const branchOptions = safeBlocks.filter(b => b.block_type === 'branch').map(b => ({ value: b.id, label: b.name }));
+
+  return (
+    <Card withBorder padding="sm" style={{ width: 200, background: '#fff', position: 'relative', overflow: 'visible' }}>
+      <Handle type="target" id="in" position={Position.Left} style={{ width: 16, height: 16, background: '#aa3bff', left: -9, top: '50%' }} />
+      
+      <Text fw={500} size="sm" mb="xs">Ветвление</Text>
+      <Select placeholder="Условие" data={branchOptions} value={data.branchId} onChange={(v) => data.onChange(id, 'branchId', v)} size="xs" />
+      
+      <div style={{ position: 'absolute', right: -15, top: '25%', fontSize: 11, color: 'green', fontWeight: 'bold' }}>Да</div>
+      <Handle type="source" id="true" position={Position.Right} style={{ background: 'green', width: 16, height: 16, right: -9, top: '30%' }} />
+      
+      <div style={{ position: 'absolute', right: -15, top: '65%', fontSize: 11, color: 'red', fontWeight: 'bold' }}>Нет</div>
+      <Handle type="source" id="false" position={Position.Right} style={{ background: 'red', width: 16, height: 16, right: -9, top: '70%' }} />
     </Card>
   );
 };
@@ -98,6 +195,21 @@ export function BasicAppShell() {
 
   const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
 
+  const isValidConnection = useCallback((connection) => {
+    const sourceNode = nodes.find(n => n.id === connection.source);
+    const targetNode = nodes.find(n => n.id === connection.target);
+    if (!sourceNode || !targetNode) return false;
+
+    if ((sourceNode.type === 'source' || sourceNode.type === 'target') && !sourceNode.data.dev) return false;
+    if ((targetNode.type === 'source' || targetNode.type === 'target') && !targetNode.data.dev) return false;
+
+    return true;
+  }, [nodes]);
+
+  const deleteEdgesForNode = useCallback((nodeId) => {
+    setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
+  }, [setEdges]);
+
   const onNodeDataChange = useCallback((id, field, value) => {
     setNodes((nds) => nds.map((node) => {
       if (node.id === id) return { ...node, data: { ...node.data, [field]: value } };
@@ -108,19 +220,25 @@ export function BasicAppShell() {
   const resetCanvas = () => {
     const ts = Date.now();
     setNodes([
-      { id: `source-${ts}`, type: 'source', position: { x: 50, y: 150 }, data: { onChange: onNodeDataChange, activeDevices, logicBlocks } },
-      { id: `target-${ts+1}`, type: 'target', position: { x: 650, y: 150 }, data: { onChange: onNodeDataChange, activeDevices, logicBlocks } }
+      { 
+        id: `source-${ts}`, type: 'source', position: { x: 50, y: 150 }, 
+        data: { onChange: onNodeDataChange, activeDevices, logicBlocks, onDeleteEdges: deleteEdgesForNode, signals: [] } 
+      },
+      { 
+        id: `target-${ts+1}`, type: 'target', position: { x: 650, y: 150 }, 
+        data: { onChange: onNodeDataChange, activeDevices, logicBlocks, onDeleteEdges: deleteEdgesForNode, signals: [] } 
+      }
     ]);
     setEdges([]);
   };
 
   useEffect(() => {
     resetCanvas();
-  }, []);
+  }, []); 
 
   useEffect(() => {
-    setNodes((nds) => nds.map(n => ({ ...n, data: { ...n.data, activeDevices, logicBlocks } })));
-  }, [activeDevices, logicBlocks, setNodes]);
+    setNodes((nds) => nds.map(n => ({ ...n, data: { ...n.data, activeDevices, logicBlocks, onDeleteEdges: deleteEdgesForNode } })));
+  }, [activeDevices, logicBlocks, setNodes, deleteEdgesForNode]);
 
   useEffect(() => {
     fetch('http://localhost:9000/api/devices/available').then(res => res.json()).then(data => setAllDevices(Array.isArray(data) ? data : [])).catch(console.error);
@@ -151,10 +269,14 @@ export function BasicAppShell() {
   };
 
   const addNode = (type) => {
+    const ts = Date.now();
     setNodes((nds) => [...nds, {
-      id: `${type}-${Date.now()}`, type: type,
+      id: `${type}-${ts}`, type: type,
       position: { x: 300, y: 100 + Math.random() * 200 },
-      data: { onChange: onNodeDataChange, logicBlocks, activeDevices }
+      data: { 
+        onChange: onNodeDataChange, logicBlocks, activeDevices, onDeleteEdges: deleteEdgesForNode,
+        signals: []
+      }
     }]);
   };
 
@@ -169,7 +291,6 @@ export function BasicAppShell() {
   const safeActiveDevices = Array.isArray(activeDevices) ? activeDevices : [];
   const safeScenarios = Array.isArray(savedScenarios) ? savedScenarios : [];
 
-  // Группировка сценариев по ID
   const groupedScenarios = safeScenarios.reduce((acc, s) => {
     if (!s || !s.id) return acc;
     if (!acc[s.id]) acc[s.id] = [];
@@ -219,7 +340,10 @@ export function BasicAppShell() {
               
               <Box style={{ height: '500px', border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fafafa', marginBottom: '20px' }}>
                 <ReactFlow 
-                  nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} 
+                  nodes={nodes} edges={edges} 
+                  onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} 
+                  onConnect={onConnect}
+                  isValidConnection={isValidConnection}
                   nodeTypes={nodeTypes} fitView
                 >
                   <Background color="#ccc" gap={16} />
