@@ -1,0 +1,4 @@
+team=ultraxd
+built=2026-10-31T05:59:02
+issued_at=2026-10-31T02:38:52
+cos_finish=0 (без срока — Р-04)
